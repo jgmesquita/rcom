@@ -69,4 +69,7 @@ int llread(unsigned char *packet);
 // Return "1" on success or "-1" on error.
 int llclose(int showStatistics);
 
+/* Auxiliary Function */
+unsigned char controlRead(int fd);
+
 #endif // _LINK_LAYER_H_
