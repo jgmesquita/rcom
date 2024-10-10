@@ -262,11 +262,137 @@ int llwrite(const unsigned char *buf, int bufSize)
 // LLREAD
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
-{
-    // TODO
+{   
+    unsigned char byte, bcc2;
+    unsigned char cReceived; // Temp val to store c val
 
+    int size=0;
+    LinkStateMachine state=START;
+
+    while(state!=SSTOP){
+
+        if(read(fd,byte,1)==0){
+
+            switch(state){
+
+                case START:
+                    if(byte==FLAG){
+                        state=FLAG_RCV;
+                    }
+                    break;
+
+                case FLAG_RCV:
+                    if(byte==A_RT){
+                        state=A_RCV;
+                    }
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
+                    }
+                    else{
+                        state=START;
+                    }
+                    break;
+
+                case A_RCV:
+                    if (byte == C_I0 || byte == C_I1) {
+                        cReceived=byte;
+                        state=C_RCV;
+                    }
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
+                    }
+                    else{
+                        state=START;
+                    }
+                    break;
+
+                case C_RCV:
+                    if(byte== (A_RT ^ cReceived)){
+                        state=BCC_OK;
+                    }
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
+                    }
+                    else{
+                        state=START;
+                    }
+                    break;
+
+                case BCC_OK:
+                    if(byte == ESC ) state = 
+                    else if (byte==FLAG){
+                        
+                    }
+                    
+                case SSTOP:
+                default:
+                    break;
+            }
+        }
+        
+    }
     return 0;
 }
+
+                    if (byte == ESC) state = DATA_FOUND_ESC;
+                    else if (byte == FLAG){
+                        unsigned char bcc2 = packet[i-1];
+                        i--;
+                        packet[i] = '\0';
+                        unsigned char acc = packet[0];
+
+                        for (unsigned int j = 1; j < i; j++)
+                            acc ^= packet[j];
+
+                        if (bcc2 == acc){
+                            state = STOP_R;
+                            sendSupervisionFrame(fd, A_RE, C_RR(tramaRx));
+                            tramaRx = (tramaRx + 1)%2;
+                            return i; 
+                        }
+                        else{
+                            printf("Error: retransmition\n");
+                            sendSupervisionFrame(fd, A_RE, C_REJ(tramaRx));
+                            return -1;
+                        };
+
+                    }
+                    else{
+                        packet[i++] = byte;
+                    }
+                    break;
+                case DATA_FOUND_ESC:
+                    state = READING_DATA;
+                    if (byte == ESC || byte == FLAG) packet[i++] = byte;
+                    else{
+                        packet[i++] = ESC;
+                        packet[i++] = byte;
+                    }
+                    break;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ////////////////////////////////////////////////
 // LLCLOSE
@@ -276,6 +402,19 @@ int llclose(int showStatistics)
     int clstat = closeSerialPort();
     return clstat;
 }
+
+
+
+
+
+
+
+  
+
+
+
+
+
 
 /* Auxiliary Function */
 unsigned char controlRead(int fd){

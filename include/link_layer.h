@@ -17,6 +17,8 @@
 #define C_REJ0 0x54
 #define C_REJ1 0X55
 #define c_DISC 0x0B
+#define C_I0 0x00
+#define C_I1 0x80
 
 typedef enum
 {
