@@ -6,14 +6,16 @@
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
 
+extern int fd;
+
 unsigned char tramaTx = 0;
 unsigned char tramaRx = 1;
+
 volatile int STOP = FALSE;
 int alarmEnabled = FALSE;
 int alarmCount = 0;
 int timeout = 0;
 int nRetransmissions = 0;
-int fd;
 
 
 void alarmHandler(int signal) {
@@ -27,8 +29,8 @@ void alarmHandler(int signal) {
 int llopen(LinkLayer connectionParameters)
 {
     /* This will open the socket between the computers */
-    fd = openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate)
-    if (fd < 0) {
+    
+    if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) {
         return -1;
     }
 
@@ -50,11 +52,11 @@ int llopen(LinkLayer connectionParameters)
             (void) signal(SIGALRM, alarmHandler);
             while (nRetransmissions != 0 && state != SSTOP) {
                 unsigned char frame[5] = {FLAG, A_TR, C_SET, A_TR ^ C_SET, FLAG};
-                write(fd, frame, 5);
+                writeBytes(frame, 5);
                 alarm(timeout);
                 alarmEnabled = TRUE;
                 while (alarmEnabled == TRUE && state != SSTOP) {
-                    if (read(fd, &byte, 1) > 0) {
+                    if (readByte(&byte) > 0) {
                         switch (state) {
                             case START:
                                 if (byte == FLAG) {
@@ -109,7 +111,7 @@ int llopen(LinkLayer connectionParameters)
             break;  
         case LlRx:
             while (state != SSTOP) {
-                if (read(fd, &byte, 1) > 0) {
+                if (readByte(&byte) > 0) {
                     switch (state) {
                         case START:
                             if (byte == FLAG) {
@@ -117,7 +119,7 @@ int llopen(LinkLayer connectionParameters)
                             }
                             break;
                         case FLAG_RCV:
-                            if (byte == A_ER) {
+                            if (byte == A_TR) {
                                 state = A_RCV;
                             }
                             else if (byte != FLAG) {
@@ -160,7 +162,7 @@ int llopen(LinkLayer connectionParameters)
                 }
             }  
             unsigned char frame[5] = {FLAG, A_RT, C_UA, A_RT ^ C_UA, FLAG};
-            write(fd, frame, 5);
+            writeBytes(frame, 5);
             break; 
         default:
             return -1;
@@ -175,7 +177,7 @@ int llopen(LinkLayer connectionParameters)
 int llwrite(const unsigned char *buf, int bufSize)
 {
     /* Make sure it has enough space for the main components! */
-    int frameSize = 6+bufSize; 
+    int frameSize = bufSize + 6; 
 
     /*  Allocate the space in memory */
     unsigned char *frame = (unsigned char *)malloc(frameSize); 
@@ -271,8 +273,6 @@ int llread(unsigned char *packet)
 ////////////////////////////////////////////////
 int llclose(int showStatistics)
 {
-    // TODO
-
     int clstat = closeSerialPort();
     return clstat;
 }
@@ -291,7 +291,7 @@ unsigned char controlRead(int fd){
                     }
                     break;
                 case FLAG_RCV:
-                    if (byte == A_RE) {
+                    if (byte == A_RT) {
                         state = A_RCV;
                     }
                     else if (byte != FLAG) {
