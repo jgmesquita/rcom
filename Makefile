@@ -4,6 +4,7 @@
 # Parameters
 CC = gcc
 CFLAGS = -Wall
+LDFLAGS = -lm
 
 SRC = src/
 INCLUDE = include/

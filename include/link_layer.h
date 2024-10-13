@@ -5,6 +5,15 @@
 #define _LINK_LAYER_H_
 
 #include <signal.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <termios.h>
+#include <unistd.h>
+#include <time.h>
 
 #define FLAG 0x7E
 #define ESC 0x7D
@@ -12,11 +21,13 @@
 #define A_RT 0x01 // Address field in frames that are commands sent by the Receiver or replies sent by the Transmitter (A_RE)
 #define C_SET 0x03
 #define C_UA 0x07
+#define C_I0 0x00
+#define C_I1 0x80
 #define C_RR0 0xAA
 #define C_RR1 0xAB
 #define C_REJ0 0x54
 #define C_REJ1 0X55
-#define c_DISC 0x0B
+#define C_DISC 0x0B
 
 typedef enum
 {
@@ -42,6 +53,8 @@ typedef enum
     C_RCV,
     BCC_OK,
     SSTOP,
+    READING,
+    SPECIAL_FOUND
 } LinkStateMachine;
 
 // SIZE of maximum acceptable payload.
@@ -70,6 +83,6 @@ int llread(unsigned char *packet);
 int llclose(int showStatistics);
 
 /* Auxiliary Function */
-unsigned char controlRead(int fd);
+char controlRead(int fd);
 
 #endif // _LINK_LAYER_H_
