@@ -49,9 +49,9 @@ int llopen(LinkLayer connectionParameters)
     /* Handle if we are hadling the transmiter (role = LlTx) or the receiver (role = LlRx) */
     switch (role) {
         case LlTx:
-            printf("R: %d\n", nRetransmissions);
             (void)signal(SIGALRM, alarmHandler);
             while (nRetransmissions > 0 && state != SSTOP) {
+                printf("Retransmission: %d\n", nRetransmissions);
                 char frame[] = {FLAG, A_TR, C_SET, A_TR ^ C_SET, FLAG};
                 writeBytes(frame, 5);
                 alarm(timeout);
@@ -97,7 +97,9 @@ int llopen(LinkLayer connectionParameters)
                             case BCC_OK:
                                 if (byte == FLAG) {
                                     state = SSTOP;
-                                    //printf("I'm here!\n");
+                                    printf("Connection was successful!\n");
+                                    alarmCount = 0;
+                                    nRetransmissions = connectionParameters.nRetransmissions;
                                     alarm(0);
                                 }
                                 else {
@@ -166,12 +168,12 @@ int llopen(LinkLayer connectionParameters)
             }  
             char frame[5] = {FLAG, A_RT, C_UA, A_RT ^ C_UA, FLAG};
             writeBytes(frame, 5);
+            printf("Connection was successful!\n");
             break; 
         default:
             return -1;
             break;
     }
-    printf("Connection was successful!\n");
     return fd;
 }
 
@@ -221,24 +223,27 @@ int llwrite(const unsigned char *buf, int bufSize)
     int current = 0;
     int rejected = 0;
     int accepted = 0;
-
-    while (current < nRetransmissions) { 
+    while (current <= nRetransmissions) { 
         alarmEnabled = TRUE;
-        //printf("Write!\n");
         alarm(timeout);
         rejected = 0;
         accepted = 0;
         while (alarmEnabled == TRUE && !rejected && !accepted) {
-            writeBytes(frame, size);
+            printf("Sending: ");
+            for (int i = 0; i < size; i++) printf("%d ", frame[i]);
+            int a = writeBytes(frame, size);
+            printf("\nNrBytes: %d\n", a);
             char result = controlRead(fd);
             if (!result) {
                 continue;
             }
             else if (result == C_REJ0 || result == C_REJ1) {
                 rejected = 1;
+                printf("Rejected!\n");
             }
             else if (result == C_RR0 || result == C_RR1) {
                 accepted = 1;
+                printf("Accepted!\n");
                 tramaTx = (tramaTx+1) % 2;
             }
             else {
@@ -246,7 +251,7 @@ int llwrite(const unsigned char *buf, int bufSize)
             }
         }
         if (accepted) {
-            printf("Package accepted!\n");
+            printf("Package Accepted!\n");
             break;
         }
         current++;
@@ -273,7 +278,9 @@ int llread(unsigned char *packet)
     int index = 0;
     LinkStateMachine state = START;
     while (state != SSTOP) {  
-        if (readByte(&byte)) {
+        if (readByte(&byte) > 0) {
+            printf("Reading: ");
+            printf("%d", byte);
             switch (state) {
                 case START:
                     if (byte == FLAG) {
@@ -461,6 +468,7 @@ char controlRead(int fd){
     LinkStateMachine state = START;
     while (state != SSTOP && alarmEnabled == TRUE) {  
         if (readByte(&byte) > 0) {
+            printf("Byte: %d\n", byte);
             switch (state) {
                 case START:
                     if (byte == FLAG) {
