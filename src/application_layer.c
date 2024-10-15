@@ -53,7 +53,6 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
                 exit(-1);
             }
 
-            printf("Halloooo!\n");
 
             unsigned char seqNum = 0;
             unsigned char *fileContent = loadData(fileStream, totalFileSize);
@@ -90,13 +89,14 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
             unsigned char *receivedPacket = (unsigned char *)malloc(MAX_PAYLOAD_SIZE);
             int packetLength = -1;
-            while ((packetLength = llread(receivedPacket)) < 0);
+            printf("About to read!\n");
+            packetLength = llread(receivedPacket);
+            printf("out!\n");
             unsigned long int receivedFileSize = 0;
             unsigned char *receivedFilename = processControlPacket(receivedPacket, packetLength, &receivedFileSize);
 
             FILE *outputFile = fopen((char *)receivedFilename, "wb+");
             while (1) {
-                printf("I reached cycle!\n");
                 while ((packetLength = llread(receivedPacket)) < 0);
                 if (packetLength == 0) break;
                 else if (receivedPacket[0] != 3) {
