@@ -44,7 +44,7 @@ int llopen(LinkLayer connectionParameters)
     timeout = connectionParameters.timeout;
 
     /* Store our current byte */
-    char byte;
+    char byte = 0;
 
     /* Handle if we are hadling the transmiter (role = LlTx) or the receiver (role = LlRx) */
     switch (role) {
@@ -191,7 +191,7 @@ int llwrite(const unsigned char *buf, int bufSize)
     /* Set the main components */
     frame[0] = FLAG;
     frame[1] = A_TR;
-    frame[2] = C_SET;
+    frame[2] = C_I0;
     frame[3] = C_SET ^ A_TR;
 
     /* Copy directly into the frame from the buffer */
@@ -273,12 +273,12 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
 {
-    char byte;
-    char temp;
+    char byte = 0;
+    char temp = 0;
     int index = 0;
     LinkStateMachine state = START;
     while (state != SSTOP) {  
-        if (readByte(&byte) > 0) {
+        if (readByte(&byte)) {
             printf("Reading: ");
             printf("%d", byte);
             switch (state) {
