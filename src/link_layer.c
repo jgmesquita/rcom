@@ -21,7 +21,6 @@ int nRetransmissions = 0;
 void alarmHandler(int signal) {
     alarmEnabled = FALSE;
     alarmCount++;
-    printf("Alarm %d is ticking!\n", alarmCount);
 }
 
 ////////////////////////////////////////////////
@@ -40,19 +39,19 @@ int llopen(LinkLayer connectionParameters)
 
     /* This will store the information about the connection */
     LinkLayerRole role = connectionParameters.role;
+    int baudRate = connectionParameters.baudRate;
     nRetransmissions = connectionParameters.nRetransmissions;
     timeout = connectionParameters.timeout;
 
     /* Store our current byte */
-    char byte;
+    unsigned char byte;
 
     /* Handle if we are hadling the transmiter (role = LlTx) or the receiver (role = LlRx) */
     switch (role) {
         case LlTx:
-            (void)signal(SIGALRM, alarmHandler);
-            while (nRetransmissions > 0 && state != SSTOP) {
-                printf("Retransmission: %d\n", nRetransmissions);
-                char frame[] = {FLAG, A_TR, C_SET, A_TR ^ C_SET, FLAG};
+            (void) signal(SIGALRM, alarmHandler);
+            while (nRetransmissions != 0 && state != SSTOP) {
+                unsigned char frame[5] = {FLAG, A_TR, C_SET, A_TR ^ C_SET, FLAG};
                 writeBytes(frame, 5);
                 alarm(timeout);
                 alarmEnabled = TRUE;
@@ -97,10 +96,6 @@ int llopen(LinkLayer connectionParameters)
                             case BCC_OK:
                                 if (byte == FLAG) {
                                     state = SSTOP;
-                                    printf("Connection was successful!\n");
-                                    alarmCount = 0;
-                                    nRetransmissions = connectionParameters.nRetransmissions;
-                                    alarm(0);
                                 }
                                 else {
                                     state = START;
@@ -166,9 +161,8 @@ int llopen(LinkLayer connectionParameters)
                     }
                 }
             }  
-            char frame[5] = {FLAG, A_RT, C_UA, A_RT ^ C_UA, FLAG};
+            unsigned char frame[5] = {FLAG, A_RT, C_UA, A_RT ^ C_UA, FLAG};
             writeBytes(frame, 5);
-            printf("Connection was successful!\n");
             break; 
         default:
             return -1;
@@ -186,33 +180,43 @@ int llwrite(const unsigned char *buf, int bufSize)
     int frameSize = bufSize + 6; 
 
     /*  Allocate the space in memory */
-     char *frame = (char *)malloc(frameSize); 
+    unsigned char *frame = (unsigned char *)malloc(frameSize); 
 
     /* Set the main components */
     frame[0] = FLAG;
     frame[1] = A_TR;
-    frame[2] = C_SET;
-    frame[3] = C_SET ^ A_TR;
+    frame[2] = C_N(tramaTx);
+    frame[3] = FLAG ^ A_TR;
 
     /* Copy directly into the frame from the buffer */
     memcpy(frame+4,buf, bufSize);
     
     /* Use strategy explained in sliders to ensure the message is correct later */
-    char BCC2 = buf[0];
-    for (int i = 1 ; i < bufSize ; i++) {
+    unsigned char BCC2 = buf[0];
+    for (unsigned int i = 1 ; i < bufSize ; i++) {
         BCC2 ^= buf[i];
     }
 
-    /* First byte with payload */
+    /* Current size of the frame */
     int size = 4;
 
-    /* Handle FLAG and ESC in the middle of the payload */
+    /* Adapt size of the frame */
     for (unsigned int i = 0 ; i < bufSize ; i++) {
-        if (buf[i] == FLAG || buf[i] == ESC) {
-            frame = realloc(frame,++frameSize);
+         if (buf[i] == FLAG) {
+            //FLAG (0x7E) -> ESC (0x7D) followed by 0x5E
+            frame = realloc(frame, ++frameSize);
             frame[size++] = ESC;
+            frame[size++] = FLAG ^ 0x20; // 0x5E
+        } 
+        else if (buf[i] == ESC) {
+            // ESC ->  ESC (0x7D) followed by 0x5D
+            frame = realloc(frame, ++frameSize);
+            frame[size++] = ESC;
+            frame[size++] = ESC ^ 0x20; // 0x5D
+        } 
+        else {
+            frame[size++] = buf[i];
         }
-        frame[size++] = buf[i];
     }
 
     /* Add final components */
@@ -223,27 +227,23 @@ int llwrite(const unsigned char *buf, int bufSize)
     int current = 0;
     int rejected = 0;
     int accepted = 0;
-    while (current <= nRetransmissions) { 
+
+    while (current < nRetransmissions) { 
         alarmEnabled = TRUE;
         alarm(timeout);
         rejected = 0;
         accepted = 0;
         while (alarmEnabled == TRUE && !rejected && !accepted) {
-            printf("Sending: ");
-            for (int i = 0; i < size; i++) printf("%d ", frame[i]);
-            int a = writeBytes(frame, size);
-            printf("\nNrBytes: %d\n", a);
-            char result = controlRead(fd);
+            write(fd, frame, size);
+            unsigned char result = controlRead(fd);
             if (!result) {
                 continue;
             }
             else if (result == C_REJ0 || result == C_REJ1) {
                 rejected = 1;
-                printf("Rejected!\n");
             }
             else if (result == C_RR0 || result == C_RR1) {
                 accepted = 1;
-                printf("Accepted!\n");
                 tramaTx = (tramaTx+1) % 2;
             }
             else {
@@ -251,7 +251,6 @@ int llwrite(const unsigned char *buf, int bufSize)
             }
         }
         if (accepted) {
-            printf("Package Accepted!\n");
             break;
         }
         current++;
@@ -264,6 +263,7 @@ int llwrite(const unsigned char *buf, int bufSize)
         return frameSize;
     }
     else{
+        llclose(fd);
         return -1;
     }
 }
@@ -272,62 +272,72 @@ int llwrite(const unsigned char *buf, int bufSize)
 // LLREAD
 ////////////////////////////////////////////////
 int llread(unsigned char *packet)
-{
-    char byte;
-    char temp;
-    int index = 0;
-    LinkStateMachine state = START;
-    while (state != SSTOP) {  
-        if (readByte(&byte) > 0) {
-            printf("Reading: ");
-            printf("%d", byte);
-            switch (state) {
+{   
+    unsigned char byte, bcc2;
+    unsigned char cReceived; // Temp val to store c val
+
+    int size=0, index=0;
+    LinkStateMachine state=START;
+
+    while(state!=SSTOP){
+
+        if(read(fd,byte,1)==0){
+
+            switch(state){
+
                 case START:
-                    if (byte == FLAG) {
-                        state = FLAG_RCV;
+                    if(byte==FLAG){
+                        state=FLAG_RCV;
                     }
                     break;
+
                 case FLAG_RCV:
-                    if (byte == A_TR) {
-                        state = A_RCV;
+                    if(byte==A_RT){
+                        state=A_RCV;
                     }
-                    else if (byte != FLAG) {
-                        state = START;
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
+                    }
+                    else{
+                        state=START;
                     }
                     break;
+
                 case A_RCV:
                     if (byte == C_I0 || byte == C_I1) {
-                        state = C_RCV;
-                        temp = byte; // We store this to check de BCC1 later!  
+                        cReceived=byte;
+                        state=C_RCV;
                     }
-                    else if (byte == FLAG) {
-                        state = FLAG_RCV;
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
                     }
-                    else if (byte == C_DISC) {
+                     else if (byte == C_DISC) {
                         char frame[5] = {FLAG, A_RT, C_DISC, A_RT ^ C_DISC, FLAG};
                         writeBytes(frame, 5);  
                         return 0;
                     }
-                    else {
-                        state = START;
+                    else{
+                        state=START;
                     }
                     break;
+
                 case C_RCV:
-                    if (byte == (A_TR ^ temp)) {
-                        state = READING;
+                    if(byte== (A_RT ^ cReceived)){
+                        state=BCC_OK;
                     }
-                    else if (byte == FLAG) {
-                        state = FLAG_RCV;
+                    else if(byte==FLAG){
+                        state=FLAG_RCV;
+                        
                     }
-                    else {
-                        state = START;
+                    
+                    else{
+                        state=START;
                     }
                     break;
-                case READING:
-                    if (byte == ESC) {
-                        state = SPECIAL_FOUND;
-                    }
-                    else if (byte == FLAG){
+
+                case BCC_OK: 
+                    if(byte == ESC ) state = SPECIAL_FOUND;
+                    else if (byte == FLAG){    //reading data here
                         char BCC2 = packet[index-1];
                         index--;
                         packet[index] = '\0';
@@ -367,21 +377,24 @@ int llread(unsigned char *packet)
                     }
                     break;
                 case SPECIAL_FOUND:
-                    state = READING;
+                //BYTE STUFFING, DUPLICATE BYTE AND CONTINUE READING
+                    state = BCC_OK;
                     if (byte == ESC || byte == FLAG) {
                         packet[index++] = byte;
                     }
                     else{
                         packet[index++] = ESC;
-                        packet[index++] = byte;
+                        packet[index++] = FLAG;
                     }
                     break;
-                default: 
+                case SSTOP:
+                
+                default:
                     break;
             }
         }
     }
-    return -1;
+    return 0;
 }
 
 ////////////////////////////////////////////////
@@ -462,13 +475,12 @@ int llclose(int showStatistics)
 }
 
 /* Auxiliary Function */
-char controlRead(int fd){
-    char byte = 0;
-    char temp = 0;
+unsigned char controlRead(int fd){
+    unsigned char byte = 0;
+    unsigned char temp = 0;
     LinkStateMachine state = START;
     while (state != SSTOP && alarmEnabled == TRUE) {  
-        if (readByte(&byte) > 0) {
-            printf("Byte: %d\n", byte);
+        if (read(fd, &byte, 1) > 0 || 1) {
             switch (state) {
                 case START:
                     if (byte == FLAG) {

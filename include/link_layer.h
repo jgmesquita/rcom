@@ -83,6 +83,6 @@ int llread(unsigned char *packet);
 int llclose(int showStatistics);
 
 /* Auxiliary Function */
-char controlRead(int fd);
+unsigned char controlRead(int fd);
 
 #endif // _LINK_LAYER_H_
