@@ -2,6 +2,7 @@
 
 #include "application_layer.h"
 #include "link_layer.h"
+#include "serial_port.h"
 #include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -48,7 +49,7 @@ void applicationLayer(const char *serialPort, const char *role, int baudRate, in
 
         case LlRx: {
 
-            char *receivedPacket = (char *)malloc(3);
+            char *receivedPacket = (char *)malloc(4);
             int packetLength = -1;
             printf("About to read!\n");
             packetLength = llread(receivedPacket);

@@ -277,15 +277,13 @@ int llwrite(const char *buf, int bufSize)
 ////////////////////////////////////////////////
 int llread(char *packet)
 {
+    printf("Reading: ");
     char byte = 0;
-    int readL = readByte(&byte);
-    printf("%d", readL);
     char temp = 0;
     int index = 0;
     LinkStateMachine state = START;
-    printf("Reading: ");
     while (state != SSTOP) {  
-        readL = readByte(&byte);
+        int readL = readByte(&byte);
         if (readL > 0) {
             printf("%d", byte);
             switch (state) {
