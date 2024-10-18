@@ -6,8 +6,6 @@
 // MISC
 #define _POSIX_SOURCE 1 // POSIX compliant source
 
-extern int fd;
-
 unsigned char tramaTx = 0;
 unsigned char tramaRx = 1;
 
@@ -34,6 +32,7 @@ int llopen(LinkLayer connectionParameters)
     if (openSerialPort(connectionParameters.serialPort, connectionParameters.baudRate) < 0) {
         return -1;
     }
+    
 
     /* Start of the state machine */
     LinkStateMachine state = START;
@@ -174,19 +173,22 @@ int llopen(LinkLayer connectionParameters)
             return -1;
             break;
     }
-    return fd;
+    if (nRetransmissions == 0) {
+        return -1;
+    }
+    return 1;
 }
 
 ////////////////////////////////////////////////
 // LLWRITE
 ////////////////////////////////////////////////
-int llwrite(const unsigned char *buf, int bufSize)
+int llwrite(const char *buf, int bufSize)
 {
     /* Make sure it has enough space for the main components! */
     int frameSize = bufSize + 6; 
 
     /*  Allocate the space in memory */
-     char *frame = (char *)malloc(frameSize); 
+    char *frame = (char *)malloc(frameSize); 
 
     /* Set the main components */
     frame[0] = FLAG;
@@ -230,10 +232,12 @@ int llwrite(const unsigned char *buf, int bufSize)
         accepted = 0;
         while (alarmEnabled == TRUE && !rejected && !accepted) {
             printf("Sending: ");
-            for (int i = 0; i < size; i++) printf("%d ", frame[i]);
+            for (int i = 0; i < size; i++) {
+                printf("%d ", frame[i]);
+            }
             int a = writeBytes(frame, size);
             printf("\nNrBytes: %d\n", a);
-            char result = controlRead(fd);
+            char result = controlRead();
             if (!result) {
                 continue;
             }
@@ -271,15 +275,18 @@ int llwrite(const unsigned char *buf, int bufSize)
 ////////////////////////////////////////////////
 // LLREAD
 ////////////////////////////////////////////////
-int llread(unsigned char *packet)
+int llread(char *packet)
 {
     char byte = 0;
+    int readL = readByte(&byte);
+    printf("%d", readL);
     char temp = 0;
     int index = 0;
     LinkStateMachine state = START;
+    printf("Reading: ");
     while (state != SSTOP) {  
-        if (readByte(&byte)) {
-            printf("Reading: ");
+        readL = readByte(&byte);
+        if (readL > 0) {
             printf("%d", byte);
             switch (state) {
                 case START:
@@ -462,7 +469,7 @@ int llclose(int showStatistics)
 }
 
 /* Auxiliary Function */
-char controlRead(int fd){
+char controlRead(){
     char byte = 0;
     char temp = 0;
     LinkStateMachine state = START;
